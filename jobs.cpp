@@ -1,6 +1,6 @@
 #include "jobs.h"
 #include <iostream>
-
+#include <thread>
 
  struct jobData
 {
@@ -11,19 +11,45 @@
 
 static std::vector<jobData> jobs;
 
+static std::vector<std::thread> threads;
 
+static int usableThreads;
 
 void reqJobs(void* func, void* dep, int pri)
 {
     jobs.push_back({func, dep, pri});
 }
 
-void doJobs() {
+void initJobsSystem()
+{
 
-    for (jobData job: jobs)
+    usableThreads = std::thread::hardware_concurrency();
+
+    std::cout << " total threads: " << usableThreads << std::endl;
+
+
+    usableThreads -= 1;
+
+    if (usableThreads > 4) usableThreads-=1;
+
+    std::cout << " Threads program will use : " << usableThreads << std::endl;
+
+    threads.resize(usableThreads);
+}
+
+
+static void assignJobs(int threadID)
+{
+    void(*func)() = (void(*)())jobs[threadID].function;
+    func();
+    jobs.erase(jobs.begin());
+}
+
+void doJobs()
+{
+    for (int i = 0; i < usableThreads; ++i)
     {
-
-        void(*func)() = (void(*)())job.function;
-        func();
+        assignJobs(i);
     }
 }
+

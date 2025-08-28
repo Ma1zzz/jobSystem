@@ -13,6 +13,8 @@ public:
     }
 };
 
+void initJobsSystem();
+
 
 void doJobs();
 
