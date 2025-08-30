@@ -1,13 +1,17 @@
 #pragma once
-#define DEFINE_JOB(func, dep, pri) \
-    static JobRegistrar func##_registrar((void*)func, dep, pri);
+#include <functional>
+#define DEFINE_JOB(func, dep, pri, ...) \
+    static JobRegistrar func##_registrar([](){ func(__VA_ARGS__); }, dep, pri);
 
 
- void reqJobs(void* func = nullptr, void* dep = nullptr, int pri = 0);
+
+void reqJobs(std::function<void()> = nullptr, void* dep = nullptr, int pri = 0);
+
+void parallelLoop(int count, std::function<void()> code, int jobsToCreate = 4);
 
 class JobRegistrar {
 public:
-    JobRegistrar(void* func, void* dep = nullptr, int pri = 0)
+    JobRegistrar(std::function<void()> func, void* dep = nullptr, int pri = 0)
     {
         reqJobs(func, dep, pri);
     }
