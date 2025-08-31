@@ -1,192 +1,220 @@
 #include <chrono>
+#include <condition_variable>
 #include "jobs.h"
+#include <functional>
 #include <iostream>
-#include <ranges>
-#include <vector>
-#include <mutex>
+#include <queue>
 #include <thread>
 #include <unistd.h>
+#include <mutex>
+#include <algorithm>
 
 
- struct jobData
+struct jobData
 {
     std::function<void()> function;
     void* dependency;
     int priority;
+    bool isLoopJob = false;
 };
 
-struct loopJob
-        {
-    std::function<void()> function;
+static std::condition_variable loopCompletionCondition;
+static std::condition_variable threadCondition;
 
-};
+static bool shouldShutDown = false;
 
-std::queue<jobData> jobQueue;
+static std::mutex jobsQueueMutex;
 
-static std::vector<jobData> jobs;
+static std::queue<jobData>& getJobQueue() {
+    static std::queue<jobData> jobQueue;
+    return jobQueue;
+}
 
-static std::vector<loopJob> loopJobs;
+static std::atomic<int> loopJobsCount = 0;
+static std::atomic<int> loopJobsLeftToComplete = 0;
 
 static std::vector<std::thread> threads;
-
-static std::vector<std::atomic<bool>> freeThreads;
-//static std::vector<bool> freeThreads;
-
-std::mutex freeThreadsMutex;
 
 static int usableThreads;
 
 void reqJobs(std::function<void()> func, void* dep, int pri)
 {
-    jobQueue.push({func, dep, pri});
-    //jobs.push_back({func, dep, pri});
+    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    getJobQueue().push({func, dep, pri, false});
+    lock.unlock();
 }
 
+static void sortByPriority()
+{
+
+    std::vector<jobData> jobVector;
+    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+
+    int length = getJobQueue().size();
+
+    for (int i = 0; i < length; i++)
+    {
+        jobVector.push_back(getJobQueue().front());
+        getJobQueue().pop();
+    }
+
+    std::sort(jobVector.begin(), jobVector.end(), [](const jobData& a, const jobData& b) {
+        return a.priority < b.priority;
+    });
+
+
+    for (int i = 0; i < jobVector.size(); i++)
+    {
+        getJobQueue().push(jobVector[i]);
+    }
+    lock.unlock();
+}
+
+static void createWorkerThread()
+{
+    while (!shouldShutDown)
+    {
+        std::unique_lock<std::mutex> lock(jobsQueueMutex);
+
+
+        threadCondition.wait(lock, []{ return !getJobQueue().empty() || shouldShutDown; });
+        if (shouldShutDown) break;
+
+        jobData jobdata = getJobQueue().front();
+        auto job = getJobQueue().front().function;
+
+        if (jobdata.isLoopJob) {
+            --loopJobsCount;
+        }
+        getJobQueue().pop();
+        lock.unlock();
+
+        job();
+
+        if (jobdata.isLoopJob)
+        {
+            --loopJobsLeftToComplete;
+        }
+    }
+}
 
 void initJobsSystem()
 {
-
-    usableThreads = std::thread::hardware_concurrency();
-    //usableThreads = 2;
-
+    //usableThreads = std::thread::hardware_concurrency();
+    usableThreads = 2;
 
     std::cout << " total threads: " << usableThreads << std::endl;
 
 
+    usableThreads -= 1;
 
-
-    usableThreads -= 1; // vi gemmer lige en til systemet
-
-    usableThreads -=1; // her tager vi en mere så vi har plads til vores main thread
+    if (usableThreads > 4) usableThreads-=1;
 
     std::cout << " Threads program will use : " << usableThreads << std::endl;
 
     threads.resize(usableThreads);
-    //reeThreads.resize(usableThreads, true);
+   // freeThreads.resize(usableThreads, true);
+    shouldShutDown = false;
 }
 
 
-static void assignThreadToJob(int threadID, std::function<void()> jobToDo)
+
+static void submitloopJob(std::function<void()> func, int priority = 0)
 {
-    jobToDo();
-    //std::lock_guard<std::mutex> lock(freeThreadsMutex);
-    freeThreads[threadID] = true;
+    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    getJobQueue().push({func, nullptr, priority, true});
+    lock.unlock();
+
+    sortByPriority();
+    threadCondition.notify_one();
 }
 
-
-static void waitAllJobs()
+static void waitForLoopJobs()
 {
-    for (auto& thread : threads)
+    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    while (loopJobsCount > 0)
     {
-        if (thread.joinable())  // This check prevents the error
-        {
-            thread.join();
-        }
+        //std::unique_lock<std::mutex> lock(jobsQueueMutex);
+        auto job = getJobQueue().front();
+        getJobQueue().pop();
+        --loopJobsCount;
+        lock.unlock();
+        job.function();
 
-    }
-}
-
-
-static int checkForFreeThread()
-{
-   // std::lock_guard<std::mutex> lock(freeThreadsMutex);
-    for (int i = 0; i < threads.size(); i++)
-    {
-        if (freeThreads[i])
-        {
-            return i;
-        }
-    }
-    return 999; // just a number for erorr
-}
-
-static int waitForThreadToFinish()
-{
-    //std::lock_guard<std::mutex> lock(freeThreadsMutex);
-    for (int i = 0; i < threads.size(); i++)
-    {
-        if (freeThreads[i])
-        {
-            std::cout << "test " << std::endl;
-
-            //if (threads[i].joinable())
-            threads[i].join();
-
-            return i;
-        }
+        lock.lock();
+        --loopJobsLeftToComplete;
+        //std::this_thread::sleep_for(std::chrono::microseconds(100000));
+        //loopCompletionCondition.wait(lock, []{ return loopJobsCount == 0; });
     }
 
-    return 999;
+    while (loopJobsLeftToComplete != 0)
+    {
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
+
+
 }
 
-static int findFreeThread()
+
+void parallelLoop(int stat, int end, std::function<void(int)> code, int jobsToCreate, bool wait)
 {
+    int count = end - stat;
+    int remainder =  count % jobsToCreate;
+    count -= remainder;
+    int loopChunk= (count / (jobsToCreate));
+    loopJobsCount += jobsToCreate;
+    loopJobsLeftToComplete += jobsToCreate;
 
-    int returnId = checkForFreeThread();
 
-    if (returnId != 999)
+
+    for (int job = 0; job < jobsToCreate; job++)
     {
-        return returnId;
+        int countStart = loopChunk * job;
+        int countEnd = loopChunk + countStart;
+
+        if (job == jobsToCreate - 1) countEnd += remainder;
+
+        submitloopJob([code, countStart, countEnd]() {
+            for (int i = countStart; i < countEnd; i++) {
+                code(i);
+            }
+        }, 0);
     }
 
-    while (true)
+    if (wait)
     {
-        usleep(1000);
-
-        returnId = waitForThreadToFinish();
-        if (returnId != 999) return returnId;
+        waitForLoopJobs();
     }
 }
-
-
-
-static void assignThreadJob();
 
 void doJobs()
 {
-    unsigned int totalJobs = jobs.size() + loopJobs.size();
-    if(totalJobs == 0) return;
 
-std::cout << totalJobs << std::endl;
+    sortByPriority();
 
-    for (int i = 0; i < totalJobs; ++i)
+    for (int i = 0; i < threads.size(); i++)
     {
-        for (int j = 0; j < loopJobs.size(); ++j)
-        {
-            int threadID = findFreeThread();
-
-            //std::lock_guard<std::mutex> lock(freeThreadsMutex);
-            freeThreads[threadID] = false;
-            threads[threadID] = std::thread(assignThreadToJob, threadID, loopJobs[j].function);
-        }
-
-        for (int y = 0; y < jobs.size(); y++)
-        {
-            int threadID = findFreeThread();
-
-           // std::lock_guard<std::mutex> lock(freeThreadsMutex);
-            freeThreads[threadID] = false;
-
-            threads[threadID] = std::thread(assignThreadToJob, threadID, jobs[y].function);
-        }
+        threads[i] = std::thread(createWorkerThread);
     }
 
-    waitAllJobs();
-}
 
-
-
-
-static void functionToParral(int loopPrJob, std::function<void()> func)
-{
-    for (int i = 0; i < loopPrJob; ++i)
+    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    for (int i = 0; i < getJobQueue().size(); i++)
     {
-        func();
+        threadCondition.notify_one();
     }
 }
 
-
-void parallelLoop(int count, std::function<void()> code, int jobsToCreate)
+void shutdownJobsSystem()
 {
+    while (getJobQueue().size() > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    shouldShutDown = true;
+    threadCondition.notify_all(); // så vækker vi dem så de break;
 
+    for (auto& thread : threads)
+    {
+        thread.join();
+    }
 }
