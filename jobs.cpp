@@ -13,7 +13,7 @@
 struct jobData
 {
     std::function<void()> function;
-    void* dependency;
+    std::function<void()> dependency;
     int priority;
     bool isLoopJob = false;
 };
@@ -24,6 +24,7 @@ static std::condition_variable threadCondition;
 static bool shouldShutDown = false;
 
 static std::mutex jobsQueueMutex;
+
 
 static std::queue<jobData>& getJobQueue() {
     static std::queue<jobData> jobQueue;
@@ -37,7 +38,7 @@ static std::vector<std::thread> threads;
 
 static int usableThreads;
 
-void reqJobs(std::function<void()> func, void* dep, int pri)
+void reqJobs(std::function<void()> func, std::function<void()> dep, int pri)
 {
     std::unique_lock<std::mutex> lock(jobsQueueMutex);
     getJobQueue().push({func, dep, pri, false});
@@ -81,14 +82,19 @@ static void createWorkerThread()
         if (shouldShutDown) break;
 
         jobData jobdata = getJobQueue().front();
-        auto job = getJobQueue().front().function;
+        auto job= getJobQueue().front().function;
+        auto dep= jobdata.dependency;
 
-        if (jobdata.isLoopJob) {
+        if (jobdata.isLoopJob)
+        {
             --loopJobsCount;
         }
+
+
         getJobQueue().pop();
         lock.unlock();
 
+        if(dep != nullptr) dep();
         job();
 
         if (jobdata.isLoopJob)
@@ -100,9 +106,10 @@ static void createWorkerThread()
 
 void initJobsSystem()
 {
-    //usableThreads = std::thread::hardware_concurrency();
-    usableThreads = 2;
+    usableThreads = std::thread::hardware_concurrency();
+    //usableThreads = 6; // for testing
 
+    if(usableThreads == 1) throw std::runtime_error("Not enough threads for multithreading.");
     std::cout << " total threads: " << usableThreads << std::endl;
 
 
@@ -131,20 +138,20 @@ static void submitloopJob(std::function<void()> func, int priority = 0)
 
 static void waitForLoopJobs()
 {
-    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    //std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    jobsQueueMutex.lock();
+
     while (loopJobsCount > 0)
     {
+       // std::cout << "working on loop jobs " <<  std::endl;
         //std::unique_lock<std::mutex> lock(jobsQueueMutex);
         auto job = getJobQueue().front();
         getJobQueue().pop();
         --loopJobsCount;
-        lock.unlock();
+        --loopJobsLeftToComplete;
+        jobsQueueMutex.unlock();
         job.function();
 
-        lock.lock();
-        --loopJobsLeftToComplete;
-        //std::this_thread::sleep_for(std::chrono::microseconds(100000));
-        //loopCompletionCondition.wait(lock, []{ return loopJobsCount == 0; });
     }
 
     while (loopJobsLeftToComplete != 0)
@@ -166,10 +173,9 @@ void parallelLoop(int stat, int end, std::function<void(int)> code, int jobsToCr
     loopJobsLeftToComplete += jobsToCreate;
 
 
-
     for (int job = 0; job < jobsToCreate; job++)
     {
-        int countStart = loopChunk * job;
+        int countStart = loopChunk * job + stat;
         int countEnd = loopChunk + countStart;
 
         if (job == jobsToCreate - 1) countEnd += remainder;
@@ -199,7 +205,9 @@ void doJobs()
 
 
     std::unique_lock<std::mutex> lock(jobsQueueMutex);
-    for (int i = 0; i < getJobQueue().size(); i++)
+    int queueSize = getJobQueue().size();
+    lock.unlock();;
+    for (int i = 0; i < queueSize; i++)
     {
         threadCondition.notify_one();
     }
@@ -207,8 +215,17 @@ void doJobs()
 
 void shutdownJobsSystem()
 {
-    while (getJobQueue().size() > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    jobsQueueMutex.lock();
+    int queueSize = getJobQueue().size();
+    jobsQueueMutex.unlock();
+
+
+    while (queueSize > 0)
+    {
+        jobsQueueMutex.lock();
+        queueSize = getJobQueue().size();
+        jobsQueueMutex.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     shouldShutDown = true;
     threadCondition.notify_all(); // så vækker vi dem så de break;
