@@ -22,4 +22,6 @@ void initJobsSystem();
 
 void doJobs();
 
+void waitAllJobs();
+
 void shutdownJobsSystem();

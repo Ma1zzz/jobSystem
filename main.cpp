@@ -86,7 +86,7 @@ void printNumber(int number)
     std::cout << number << std::endl;;
 }
 
-DEFINE_JOB(printNumber, nullptr, 1, testVarible)
+//DEFINE_JOB(printNumber, nullptr, 1, testVarible)
 
 //DEFINE_JOB(PrimeCalculation, printHello, 1)
 //DEFINE_JOB(PrimeCalculation2, nullptr, 1)
@@ -95,13 +95,16 @@ int main()
 {
     initJobsSystem();
     auto start = std::chrono::high_resolution_clock::now();
-    testVarible = 2;
     doJobs();
 
 
     //auto start = std::chrono::high_resolution_clock::now();
-    //PrimeCalculation();
-    //PrimeCalculation2();
+    PrimeCalculation();
+    //PrimeCalculation3();
+
+    waitAllJobs();
+    std::cout << "er noget her til " << std::endl;
+
     shutdownJobsSystem();
     //std::cout << "number : " << count << std::endl;
     auto stop = std::chrono::high_resolution_clock::now();
