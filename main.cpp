@@ -103,7 +103,7 @@ int main()
     //PrimeCalculation3();
 
     waitAllJobs();
-    std::cout << "er noget her til " << std::endl;
+    //std::cout << "er noget her til " << std::endl;
 
     shutdownJobsSystem();
     //std::cout << "number : " << count << std::endl;

@@ -1,3 +1,4 @@
+#define DEBUGMODE false
 #include <chrono>
 #include <condition_variable>
 #include "jobs.h"
@@ -5,7 +6,8 @@
 #include <iostream>
 #include <queue>
 #include <thread>
-#include <unistd.h>
+#include <atomic>
+#include <vector>
 #include <mutex>
 #include <algorithm>
 
@@ -38,8 +40,9 @@ static std::atomic<int> loopJobsLeftToComplete = 0;
 static std::vector<std::thread> threads;
 
 static std::atomic<int> idleThreads;
-//static std::atomic<int> usableThreads;
-static int usableThreads;
+//static int idleThreads;
+static std::atomic<int> usableThreads;
+//static int usableThreads;
 
 
 void reqJobs(std::function<void()> func, std::function<void()> dep, int pri)
@@ -126,15 +129,22 @@ void initJobsSystem()
     usableThreads = std::thread::hardware_concurrency();
     //usableThreads = 6; // for testing
 
-    if(usableThreads == 1) throw std::runtime_error("Not enough threads for multithreading.");
+    if(usableThreads == 1)
+    {
+        throw std::runtime_error("Not enough threads for multithreading.");
+    }
+#if DEBUGMODE
     std::cout << " total threads: " << usableThreads << std::endl;
+#endif
 
 
     usableThreads -= 1;
 
     if (usableThreads > 4) usableThreads-=1;
 
+#if DEBUGMODE
     std::cout << " Threads program will use : " << usableThreads << std::endl;
+#endif
 
     threads.resize(usableThreads);
    // freeThreads.resize(usableThreads, true);
@@ -222,17 +232,20 @@ void doJobs()
 
 void waitAllJobs()
 {
-    if (idleThreads == usableThreads)
+    int threadsLeft = usableThreads - idleThreads;
+
+    if (threadsLeft == 0)
     {
         return;
     }
     else
     {
-        std::unique_lock<std::mutex> lock(mutex);
-        std::cout << "idle Threads: " << idleThreads << std::endl;
-        isWorkDone.wait(lock, []{ return idleThreads == usableThreads; });
-
-        std::cout << "all threads are idle" << std::endl;
+        while (threadsLeft != 0)
+        {
+            //jobsQueueMutex.lock();
+            threadsLeft = usableThreads - idleThreads;
+           // jobsQueueMutex.unlock();
+        }
     }
 }
 
@@ -246,6 +259,9 @@ void shutdownJobsSystem()
 
     for (auto& thread : threads)
     {
-        thread.join();
+        if (thread.joinable())
+        {
+            thread.join();
+        }
     }
 }
