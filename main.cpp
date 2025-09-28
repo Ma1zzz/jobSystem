@@ -1,115 +1,134 @@
-#include <iostream>
-#include <cmath>
-#include <unistd.h>
-
-#include "jobs.h"
+#include "atomic"
 #include "chrono"
+#include "jobs.h"
 #include "printf.h"
+#include <cmath>
+#include <iostream>
+#include <unistd.h>
 
 int testVarible;
 
-void PrimeCalculation()
-{
-    std::atomic<int> count = 0;
-    parallelLoop(2, 500000, [&count](int n ) {
-
+void PrimeCalculation() {
+  std::atomic<int> count = 0;
+  parallelLoop(
+      2, 500000,
+      [&count](int n) {
         bool isPrime = true;
-        for(int i = 2; i <= sqrt(n); i++) {
-            if(n % i == 0) {
-                isPrime = false;
-                break;
-            }
+        for (int i = 2; i <= sqrt(n); i++) {
+          if (n % i == 0) {
+            isPrime = false;
+            break;
+          }
         }
-        if(isPrime) count++;
-    },5, true );
+        if (isPrime)
+          count++;
+      },
+      5, true);
 
-    std::cout << "Found " << count << " primes\n";
-
+  std::cout << "Found " << count << " primes\n";
 }
 
-void PrimeCalculation2()
-{
-    std::atomic<int> count = 0;
-    parallelLoop(2, 500000, [&count](int n ) {
-
+void PrimeCalculation2() {
+  std::atomic<int> count = 0;
+  parallelLoop(
+      2, 500000,
+      [&count](int n) {
         bool isPrime = true;
-        for(int i = 2; i <= sqrt(n); i++) {
-            if(n % i == 0) {
-                isPrime = false;
-                break;
-            }
+        for (int i = 2; i <= sqrt(n); i++) {
+          if (n % i == 0) {
+            isPrime = false;
+            break;
+          }
         }
-        if(isPrime) count++;
-    },5, true );
+        if (isPrime)
+          count++;
+      },
+      5, true);
 
-    std::cout << "Found " << count << " primes\n";
-
+  std::cout << "Found " << count << " primes\n";
 }
 void PrimeCalculation3() {
-    int count = 0;
-    for(int n = 2; n < 500000; n++) {
-        bool isPrime = true;
-        for(int i = 2; i <= sqrt(n); i++) {
-            if(n % i == 0) {
-                isPrime = false;
-                break;
-            }
-        }
-        if(isPrime) count++;
+  int count = 0;
+  for (int n = 2; n < 500000; n++) {
+    bool isPrime = true;
+    for (int i = 2; i <= sqrt(n); i++) {
+      if (n % i == 0) {
+        isPrime = false;
+        break;
+      }
     }
-    std::cout << "Found " << count << " primes\n";
+    if (isPrime)
+      count++;
+  }
+  std::cout << "Found " << count << " primes\n";
 }
+
+std::atomic<int> jobN;
 void PrimeCalculation4() {
-    int count = 0;
-    for(int n = 2; n < 500000; n++) {
-        bool isPrime = true;
-        for(int i = 2; i <= sqrt(n); i++) {
-            if(n % i == 0) {
-                isPrime = false;
-                break;
-            }
-        }
-        if(isPrime) count++;
+  int count = 0;
+  for (int n = 2; n < 50; n++) {
+    bool isPrime = true;
+    for (int i = 2; i <= sqrt(n); i++) {
+      if (n % i == 0) {
+        isPrime = false;
+        break;
+      }
     }
-    std::cout << "Found " << count << " primes\n";
+    if (isPrime)
+      count++;
+  }
+  // jobN++;
+  //  std::cout << "job Number : " << jobN << std::endl;
+  //   std::cout << "Found " << count << " primes\n";
 }
 
+void test() { DEFINE_JOB(PrimeCalculation, nullptr, 1) }
 
-void test()
-{
-    DEFINE_JOB(PrimeCalculation, nullptr, 1)
-
+void printNumber(int number) {
+  // std::cout << number << std::endl;
+  ;
 }
 
-void printNumber(int number)
-{
-    std::cout << number << std::endl;;
-}
+//  DEFINE_JOB(printNumber, nullptr, 1, testVarible)
 
-//DEFINE_JOB(printNumber, nullptr, 1, testVarible)
+// DEFINE_JOB(PrimeCalculation, printHello, 1)
+// DEFINE_JOB(PrimeCalculation2, nullptr, 1)
 
-//DEFINE_JOB(PrimeCalculation, printHello, 1)
-//DEFINE_JOB(PrimeCalculation2, nullptr, 1)
+int main() {
+  initJobsSystem();
+  auto start = std::chrono::high_resolution_clock::now();
 
-int main()
-{
-    initJobsSystem();
-    auto start = std::chrono::high_resolution_clock::now();
-    doJobs();
+  // DEFINE_JOB(PrimeCalculation4, nullptr, 0);
+  //  auto start = std::chrono::high_resolution_clock::now();
 
+  doJobs();
 
-    //auto start = std::chrono::high_resolution_clock::now();
-    PrimeCalculation();
-    //PrimeCalculation3();
+  auto rgestart = std::chrono::high_resolution_clock::now();
+  for (int x = 0; x < 500000; x++) {
 
-    waitAllJobs();
-    //std::cout << "er noget her til " << std::endl;
+    reqJobs(PrimeCalculation4);
 
-    shutdownJobsSystem();
-    //std::cout << "number : " << count << std::endl;
-    auto stop = std::chrono::high_resolution_clock::now();
-    auto duration = duration_cast<std::chrono::milliseconds>(stop - start);
-    std::cout << "milliseconds : " << duration.count() << std::endl;
+    // std::cout << x << std::endl;
+    // PrimeCalculation4();
+  }
+  auto rqe = std::chrono::high_resolution_clock::now();
+  auto dur = duration_cast<std::chrono::milliseconds>(rqe - rgestart);
+  std::cout << "microseconds : " << dur.count() << std::endl;
+  // doJobs();
+  //                     PrimeCalculation3();
 
-    return 0;
+  // PrimeCalculation4();
+
+  waitAllJobs();
+  //  std::cout << "er noget her til " << std::endl;
+
+  //  shutdownJobsSystem();
+  // std::cout << "number : " << count << std::endl;
+  auto stop = std::chrono::high_resolution_clock::now();
+  auto duration = duration_cast<std::chrono::milliseconds>(stop - start);
+  std::cout << "milliseconds : " << duration.count() << std::endl;
+
+  shutdownJobsSystem();
+  std::cout << jobN << std::endl;
+  return 0;
 }
