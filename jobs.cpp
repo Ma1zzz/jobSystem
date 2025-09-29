@@ -27,12 +27,12 @@ static std::mutex jobsQueueMutex;
 static std::mutex mutex;
 
 static std::queue<std::function<void()>> loopJobs;
-
-static std::vector<jobData> &getJobQueue() {
+static std::vector<jobData> getJobQueue;
+/*static std::vector<jobData> &getJobQueue() {
   static std::vector<jobData> jobQueue;
   // static std::queue<jobData> jobQueue;
-  return jobQueue;
-}
+  return jobQueue;:w
+}*/
 
 static std::atomic<int> loopJobsCount = 0;
 static std::atomic<int> loopJobsLeftToComplete = 0;
@@ -50,7 +50,7 @@ std::counting_semaphore<std::numeric_limits<int>::max()> sem(0);
 void reqJobs(std::function<void()> func, std::function<void()> dep, int pri) {
   jobsQueueMutex.lock();
   // std::unique_lock<std::mutex> lock(jobsQueueMutex);
-  getJobQueue().push_back({func, dep, pri});
+  getJobQueue.push_back({func, dep, pri});
   // getJobQueue().push({func, dep, pri});
   // lock.unlock()
 
@@ -84,88 +84,49 @@ static void createWorkerThread() {
   while (!shouldShutDown) {
 
     idleThreads++;
-    // std::cout << "got this far" << std::endl;
-    /*jobsQueueMutex.lock();
-    if (getJobQueue().size() > 4) {
-      sem.release();
-    }
-    jobsQueueMutex.unlock();*/
-
     jobsQueueMutex.lock();
-    if (getJobQueue().empty()) {
+    if (getJobQueue.empty()) {
 
-      // std::cout << "thigssss" << std::endl;
-      /*  bool next = false;
-
-        int size = 5;
-        // std::cout << "so far" << std::endl;
-        for (int i = 0; i < 10000; ++i) {
-
-          if (!getJobQueue().empty()) {
-
-            // std::cout << "kinda workd" << std::endl;
-            next = true;
-
-            // std::cout << getJobQueue().empty() << std::endl;
-            break;
-          }
-          // std::cout << "waited " << std::endl;
-          std::this_thread::yield();
-        }
-  */ std::cout << getJobQueue().size() << std::endl;
       jobsQueueMutex.unlock();
-
-      /* if (next) {
-         std::cout << "nwxt is TRUE" << std::endl;
-         continue;
-           }*/
-
-      // std::cout << "going TO SLEEEEP" << std::endl;
+      // std::cout << "empty" << std::endl;
       sem.acquire();
-      continue;
+    } else {
+      jobsQueueMutex.unlock();
     }
-    //  jobsQueueMutex.unlock();
-
-    // std::cout << "thread will do job " << std::endl;
-    /*threadCondition.wait(lock, [] {
-      return !getJobQueue().empty() || !loopJobs.empty() || shouldShutDown;
-
-        });*/
-
     if (shouldShutDown) {
       // std::cout <<"\n shutting down" << std::endl;
       break;
     }
 
     // std::cout << getJobQueue().size() << std::endl;
+
     idleThreads--;
 
-    std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    // std::unique_lock<std::mutex> lock(jobsQueueMutex);
+    jobsQueueMutex.lock();
     if (!loopJobs.empty()) {
       auto loopJob = loopJobs.front();
       loopJobs.pop();
-      lock.unlock();
+      jobsQueueMutex.unlock();
       loopJob();
       isWorkDone.notify_one();
       continue;
     }
 
-    jobData jobdata = getJobQueue().front();
+    jobData jobdata = getJobQueue.front();
     // jobData jobdata = pickJob();
     auto job = jobdata.function;
     auto dep = jobdata.dependency;
 
-    //   getJobQueue().pop();
-    // getJobQueue().pop_front();
-    getJobQueue().erase(getJobQueue().begin() + 0);
-    lock.unlock();
+    getJobQueue.erase(getJobQueue.begin() + 0);
+    jobsQueueMutex.unlock();
 
     if (dep != nullptr) {
       dep();
     }
     job();
     // std::cout << "job is done " << std::endl;
-    isWorkDone.notify_one();
+    // isWorkDone.notify_one();
   }
 }
 
@@ -256,14 +217,17 @@ void doJobs() {
 }
 
 void waitAllJobs() {
+  std::cout << "wait" << std::endl;
   int threadsLeft = usableThreads - idleThreads;
   if (threadsLeft == 0) {
+    std::cout << "threads are done" << std::endl;
     return;
   } else {
     while (threadsLeft != 0) {
       threadsLeft = usableThreads - idleThreads;
       // std::cout << "watint :" << std::endl;
     }
+    std::cout << "Threads are done" << std::endl;
   }
 }
 

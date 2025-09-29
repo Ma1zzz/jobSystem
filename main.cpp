@@ -104,7 +104,7 @@ int main() {
   doJobs();
 
   auto rgestart = std::chrono::high_resolution_clock::now();
-  for (int x = 0; x < 500000; x++) {
+  for (int x = 0; x < 500; x++) {
 
     reqJobs(PrimeCalculation4);
 
@@ -115,7 +115,7 @@ int main() {
   auto dur = duration_cast<std::chrono::milliseconds>(rqe - rgestart);
   std::cout << "microseconds : " << dur.count() << std::endl;
   // doJobs();
-  //                     PrimeCalculation3();
+  //                      PrimeCalculation3();
 
   // PrimeCalculation4();
 
