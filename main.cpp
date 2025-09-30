@@ -66,7 +66,7 @@ void PrimeCalculation3() {
 std::atomic<int> jobN;
 void PrimeCalculation4() {
   int count = 0;
-  for (int n = 2; n < 50; n++) {
+  for (int n = 2; n < 500; n++) {
     bool isPrime = true;
     for (int i = 2; i <= sqrt(n); i++) {
       if (n % i == 0) {
@@ -81,6 +81,8 @@ void PrimeCalculation4() {
   //  std::cout << "job Number : " << jobN << std::endl;
   //   std::cout << "Found " << count << " primes\n";
 }
+
+void noCodeTest() {}
 
 void test() { DEFINE_JOB(PrimeCalculation, nullptr, 1) }
 
@@ -104,18 +106,20 @@ int main() {
   doJobs();
 
   auto rgestart = std::chrono::high_resolution_clock::now();
-  for (int x = 0; x < 500; x++) {
+  for (int x = 0; x < 50000; x++) {
 
-    reqJobs(PrimeCalculation4);
+    // reqJobs(PrimeCalculation4);
 
+    reqJobs(noCodeTest);
     // std::cout << x << std::endl;
+    // noCodeTest();
     // PrimeCalculation4();
   }
   auto rqe = std::chrono::high_resolution_clock::now();
   auto dur = duration_cast<std::chrono::milliseconds>(rqe - rgestart);
   std::cout << "microseconds : " << dur.count() << std::endl;
   // doJobs();
-  //                      PrimeCalculation3();
+  //                                  PrimeCalculation3();
 
   // PrimeCalculation4();
 
