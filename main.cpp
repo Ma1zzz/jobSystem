@@ -4,6 +4,7 @@
 #include "printf.h"
 #include <cmath>
 #include <iostream>
+#include <thread>
 #include <unistd.h>
 
 int testVarible;
@@ -79,12 +80,12 @@ void PrimeCalculation4() {
   }
   // jobN++;
   //  std::cout << "job Number : " << jobN << std::endl;
-  //   std::cout << "Found " << count << " primes\n";
+  std::cout << "Found " << count << " primes\n";
 }
 
 void noCodeTest() {}
 
-void test() { DEFINE_JOB(PrimeCalculation, nullptr, 1) }
+// void test() { DEFINE_JOB(PrimeCalculation, nullptr, 1) }
 
 void printNumber(int number) {
   // std::cout << number << std::endl;
@@ -103,23 +104,22 @@ int main() {
   // DEFINE_JOB(PrimeCalculation4, nullptr, 0);
   //  auto start = std::chrono::high_resolution_clock::now();
 
-  doJobs();
-
   auto rgestart = std::chrono::high_resolution_clock::now();
   for (int x = 0; x < 50000; x++) {
 
     // reqJobs(PrimeCalculation4);
 
     reqJobs(noCodeTest);
-    // std::cout << x << std::endl;
+    //  std::cout << x << std::endl;
     // noCodeTest();
     // PrimeCalculation4();
   }
+  std::cout << "done adding jobs" << std::endl;
   auto rqe = std::chrono::high_resolution_clock::now();
   auto dur = duration_cast<std::chrono::milliseconds>(rqe - rgestart);
   std::cout << "microseconds : " << dur.count() << std::endl;
-  // doJobs();
-  //                                  PrimeCalculation3();
+
+  //                                    PrimeCalculation3();
 
   // PrimeCalculation4();
 
