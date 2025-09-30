@@ -1,1 +1,0 @@
-/usr/bin/c++ -g -Wl,--dependency-file=CMakeFiles/job.dir/link.d CMakeFiles/job.dir/main.cpp.o CMakeFiles/job.dir/jobs.cpp.o CMakeFiles/job.dir/testProgram.cpp.o -o job

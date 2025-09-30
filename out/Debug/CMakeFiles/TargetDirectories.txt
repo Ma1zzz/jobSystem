@@ -1,3 +1,0 @@
-/home/mrhands/proj/jobSystem/out/Debug/CMakeFiles/job.dir
-/home/mrhands/proj/jobSystem/out/Debug/CMakeFiles/edit_cache.dir
-/home/mrhands/proj/jobSystem/out/Debug/CMakeFiles/rebuild_cache.dir
