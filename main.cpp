@@ -103,7 +103,7 @@ int main() {
 
   // DEFINE_JOB(PrimeCalculation4, nullptr, 0);
   //  auto start = std::chrono::high_resolution_clock::now();
-  doJobs();
+  // doJobs();
 
   auto rgestart = std::chrono::high_resolution_clock::now();
   for (int x = 0; x < 50000; x++) {
@@ -121,7 +121,7 @@ int main() {
   std::cout << "microseconds : " << dur.count() << std::endl;
 
   //                                    PrimeCalculation3();
-  // doJobs();
+  doJobs();
   // PrimeCalculation4();
 
   waitAllJobs();

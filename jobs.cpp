@@ -102,7 +102,7 @@ static void createWorkerThread(int id) {
       // sem.acquire();
     } else {
 
-      // futexVal--;
+      futexVal--;
       // sem.acquire();
     }
 #ifdef __APPLE__
@@ -266,10 +266,12 @@ void shutdownJobsSystem() {
 
   shouldShutDown = true;
 
+#ifdef __APPLE__
   for (int y = 0; y < usableThreads; y++) {
 
     dispatch_semaphore_signal(sem);
   }
+#endif
 #ifdef __linux__
   syscall(SYS_futex, &futexVal, FUTEX_WAKE, INT_MAX);
 #elif __APPLE__
