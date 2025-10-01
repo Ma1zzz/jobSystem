@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <utility>
 template <typename t> class myVector {
 private:
   t *dataType;
@@ -26,6 +27,7 @@ public:
     amoutDataStored = 0;
     currentSize = amoutDataStored * sizeof(*dataType);
     std::cout << "Size " << sizeof(*dataType) << std::endl;
+    std::cout << "Page size : " << pageSize << std::endl;
   }
   ~myVector() { munmap(data, pageSize); }
 
@@ -40,9 +42,10 @@ public:
     // kopir lige det gamle data over
     data = newData;
     capacity = neededPages * pageSize;
+    std::cout << "new capacity in bytes : " << capacity << std::endl;
   }
 
-  void add(void *input) {
+  void add(t &&input) {
     int thisDataNumber;
 
     /*jobda *test = (jobda *)input;
@@ -61,7 +64,8 @@ public:
 
     void *ptr = (char *)data + (sizeof(*dataType) * (thisDataNumber));
 
-    std::memcpy(ptr, input, sizeof(*dataType));
+    new (ptr) t(std::move(input));
+    // std::memcpy(ptr, input, sizeof(*dataType));
   }
 
   void *getVal(int number) {

@@ -8,7 +8,12 @@
 #include <functional>
 #include <iostream>
 #include <limits.h>
+#ifdef __linux__
 #include <linux/futex.h>
+#elif __APPLE__
+#include <dispatch/dispatch.h>
+dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+#endif
 #include <mutex>
 #include <queue>
 #include <sys/syscall.h>
@@ -56,19 +61,19 @@ static myVector<jobData> jobDataList;
 
 static std::atomic<int> futexVal = 0;
 
-std::counting_semaphore<std::numeric_limits<int>::max()> sem(0);
-
 void reqJobs(std::function<void()> func, std::function<void()> dep) {
-  // jobsQueueMutex.lock();
-  //  std::unique_lock<std::mutex> lock(jobsQueueMutex);
+
   jobData job = {func, dep};
-  // job.function();
-  jobDataList.add(&job);
+  jobDataList.add(std::move(job));
 
   // futexVal++;
+#ifdef __linux__
+
   syscall(SYS_futex, &futexVal, FUTEX_WAIT, 1);
-  // sem.release();
-  //  jobsQueueMutex.unlock();
+#elif __APPLE__
+  dispatch_semaphore_signal(sem);
+#endif
+
   ++jobCount;
 }
 
@@ -82,20 +87,29 @@ static void createWorkerThread(int id) {
     idleThreads++;
     // jobCount
     if (jobCount == 0) {
-      for (int i = 0; i < 10000; i++) {
+      for (int i = 0; i < 1000; i++) {
         std::this_thread::yield();
         if (jobCount != 0) {
           break;
         }
       }
-
+#ifdef __linux__
       syscall(SYS_futex, &futexVal, FUTEX_WAIT, 0);
+#elif __APPLE__
+      // dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+#endif
 
       // sem.acquire();
     } else {
-      futexVal--;
+
+      // futexVal--;
       // sem.acquire();
     }
+#ifdef __APPLE__
+    // std::cout << "LOL :" << std::endl;
+    dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+#endif
+
     if (shouldShutDown) {
       // std::cout << "THREAD IS GOING BYE BYE" << std::endl;
       break;
@@ -120,7 +134,10 @@ static void createWorkerThread(int id) {
     void *ptr = jobDataList.getVal(jobNumber.fetch_add(1));
     jobData *jobdata = (jobData *)ptr;
 
-    auto job = jobdata->function;
+    // std::cout << ptr << std::endl;
+
+    std::function<void()> job = jobdata->function;
+
     auto dep = jobdata->dependency;
 
     if (dep != nullptr) {
@@ -128,7 +145,6 @@ static void createWorkerThread(int id) {
     }
 
     job();
-
     // std::cout << "job is done " << std::endl;
   }
   // std::cout << "THREAD WANNA DIEEE" << std::endl;
@@ -160,14 +176,14 @@ void initJobsSystem() {
   shouldShutDown = false;
   getJobQueue.reserve(500000);
 
-  for (int i = 0; i < threads.size(); i++) {
-    threads[i] = std::thread(createWorkerThread, i);
+  /* for (int i = 0; i < threads.size(); i++) {
+     threads[i] = std::thread(createWorkerThread, i);
 
-    std::vector<jobData> data;
-    jobThreadQueueVector.push_back(data);
+     std::vector<jobData> data;
+     jobThreadQueueVector.push_back(data);
 
-    std::cout << "thread : " << " started" << std::endl;
-  }
+     std::cout << "thread : " << " started" << std::endl;
+   }*/
 }
 
 static void submitloopJob(std::function<void()> func) {
@@ -221,6 +237,14 @@ void parallelLoop(int stat, int end, std::function<void(int)> code,
 
 void doJobs() {
 
+  for (int i = 0; i < threads.size(); i++) {
+    threads[i] = std::thread(createWorkerThread, i);
+
+    std::vector<jobData> data;
+    jobThreadQueueVector.push_back(data);
+
+    std::cout << "thread : " << " started" << std::endl;
+  }
   // probaly gonna remove this
 }
 
@@ -242,12 +266,15 @@ void shutdownJobsSystem() {
 
   shouldShutDown = true;
 
-  /*for (int y = 0; y < usableThreads; y++) {
+  for (int y = 0; y < usableThreads; y++) {
 
-    //sem.release();
-  }*/
+    dispatch_semaphore_signal(sem);
+  }
+#ifdef __linux__
   syscall(SYS_futex, &futexVal, FUTEX_WAKE, INT_MAX);
+#elif __APPLE__
   // std::cout << "Shuting down" << std::endl;
+#endif
 
   for (int i = 0; i < threads.size(); i++) {
     if (threads[i].joinable()) {

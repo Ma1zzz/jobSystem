@@ -10,7 +10,7 @@ void parallelLoop(int start, int end, std::function<void(int)> code,
 
 class JobRegistrar {
 public:
-  JobRegistrar(std::function<void()> func,
+  JobRegistrar(std::function<void()> func = nullptr,
                std::function<void()> dep = nullptr) {
     reqJobs(func, dep);
   }
