@@ -1,0 +1,10 @@
+.idea/
+
+.cache/
+compile_commands.json
+
+out/
+*.o
+*.exe
+*.log
+*.jason

@@ -1,5 +1,6 @@
 #define DEBUGMODE false
 #include "jobs.h"
+#include "jobList.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -7,15 +8,16 @@
 #include <functional>
 #include <iostream>
 #include <limits.h>
+#include <linux/futex.h>
 #include <mutex>
 #include <queue>
+#include <sys/syscall.h>
 #include <thread>
 #include <vector>
 
 struct jobData {
   std::function<void()> function;
   std::function<void()> dependency;
-  int priority;
 };
 
 static std::condition_variable threadCondition;
@@ -50,49 +52,27 @@ static std::atomic<int> usableThreads;
 // static int usableThreads;
 //
 
+static myVector<jobData> jobDataList;
+
+static std::atomic<int> futexVal = 0;
+
 std::counting_semaphore<std::numeric_limits<int>::max()> sem(0);
 
-void reqJobs(std::function<void()> func, std::function<void()> dep, int pri) {
-  jobsQueueMutex.lock();
-  // std::unique_lock<std::mutex> lock(jobsQueueMutex);
-  getJobQueue.push_back({func, dep, pri});
-  // getJobQueue().push({func, dep, pri});
-  // lock.unlock()
+void reqJobs(std::function<void()> func, std::function<void()> dep) {
+  // jobsQueueMutex.lock();
+  //  std::unique_lock<std::mutex> lock(jobsQueueMutex);
+  jobData job = {func, dep};
+  // job.function();
+  jobDataList.add(&job);
 
-  /* int threadToGetJobNumber = 0;
-   for (int i = 0; i < usableThreads; i++) {
-     if (jobThreadQueueVector[i].size() <
-         jobThreadQueueVector[threadToGetJobNumber].size()) {
-       threadToGetJobNumber = i;
-     }
-   }
-   jobThreadQueueVector[threadToGetJobNumber].push_back({func, dep, pri});*/
-
-  sem.release();
-  jobsQueueMutex.unlock();
+  // futexVal++;
+  syscall(SYS_futex, &futexVal, FUTEX_WAIT, 1);
+  // sem.release();
+  //  jobsQueueMutex.unlock();
   ++jobCount;
-  //   threadCondition.notify_one();
 }
 
-static jobData pickJob() {
-
-  std::vector<jobData> jobVector;
-  // std::unique_lock<std::mutex> lock(jobsQueueMutex);
-
-  jobData jobToDo;
-  jobToDo = getJobQueue.front();
-
-  // std::cout << getJobQueue.size() << std::endl;
-  for (int i = 0; i < getJobQueue.size(); i++) {
-
-    if (getJobQueue[i].priority < jobToDo.priority) {
-      jobToDo = getJobQueue[i];
-    }
-  }
-  // lock.unlock();
-
-  return jobToDo;
-}
+static std::atomic<int> jobNumber = 0;
 
 static void createWorkerThread(int id) {
 
@@ -102,15 +82,19 @@ static void createWorkerThread(int id) {
     idleThreads++;
     // jobCount
     if (jobCount == 0) {
-
-      if (jobCount == 0) {
-        for (int i = 0; i < 100; i++) {
-          std::this_thread::yield();
+      for (int i = 0; i < 10000; i++) {
+        std::this_thread::yield();
+        if (jobCount != 0) {
+          break;
         }
       }
-      sem.acquire();
+
+      syscall(SYS_futex, &futexVal, FUTEX_WAIT, 0);
+
+      // sem.acquire();
     } else {
-      sem.acquire();
+      futexVal--;
+      // sem.acquire();
     }
     if (shouldShutDown) {
       // std::cout << "THREAD IS GOING BYE BYE" << std::endl;
@@ -123,7 +107,7 @@ static void createWorkerThread(int id) {
     idleThreads--;
 
     // std::unique_lock<std::mutex> lock(jobsQueueMutex);
-    jobsQueueMutex.lock();
+    // jobsQueueMutex.lock();
     if (!loopJobs.empty()) {
       auto loopJob = loopJobs.front();
       loopJobs.pop();
@@ -133,31 +117,28 @@ static void createWorkerThread(int id) {
       continue;
     }
 
-    // jobData jobdata = jobThreadQueueVector[id].front();
-    jobData jobdata = getJobQueue.front();
-    // jobData jobdata = pickJob();
-    auto job = jobdata.function;
-    auto dep = jobdata.dependency;
+    void *ptr = jobDataList.getVal(jobNumber.fetch_add(1));
+    jobData *jobdata = (jobData *)ptr;
 
-    /*jobThreadQueueVector[id].erase(jobThreadQueueVector[id].begin(),
-                                   jobThreadQueueVector[id].begin());*/
-    getJobQueue.erase(getJobQueue.begin(), getJobQueue.begin());
+    auto job = jobdata->function;
+    auto dep = jobdata->dependency;
 
-    jobsQueueMutex.unlock();
     if (dep != nullptr) {
       dep();
     }
+
     job();
+
     // std::cout << "job is done " << std::endl;
-    // isWorkDone.notify_one();
   }
   // std::cout << "THREAD WANNA DIEEE" << std::endl;
 }
 
 void initJobsSystem() {
   // usableThreads = std::thread::hardware_concurrency();
+  jobDataList.resize(50000);
   usableThreads = 6; // for testing
-
+  std::cout << usableThreads << std::endl;
   if (usableThreads == 1) {
     throw std::runtime_error("Not enough threads for multithreading.");
   }
@@ -177,6 +158,16 @@ void initJobsSystem() {
   threads.resize(usableThreads);
   // freeThreads.resize(usableThreads, true);
   shouldShutDown = false;
+  getJobQueue.reserve(500000);
+
+  for (int i = 0; i < threads.size(); i++) {
+    threads[i] = std::thread(createWorkerThread, i);
+
+    std::vector<jobData> data;
+    jobThreadQueueVector.push_back(data);
+
+    std::cout << "thread : " << " started" << std::endl;
+  }
 }
 
 static void submitloopJob(std::function<void()> func) {
@@ -193,8 +184,6 @@ static void waitForLoopJobs() {
       jobsQueueMutex.unlock();
       break;
     }
-    // std::cout << "working on loop jobs " <<  std::endl;
-    // std::unique_lock<std::mutex> lock(jobsQueueMutex);
     auto job = loopJobs.front();
     loopJobs.pop();
     jobsQueueMutex.unlock();
@@ -232,16 +221,7 @@ void parallelLoop(int stat, int end, std::function<void(int)> code,
 
 void doJobs() {
 
-  // sortByPriority();
-
-  for (int i = 0; i < threads.size(); i++) {
-    threads[i] = std::thread(createWorkerThread, i);
-
-    std::vector<jobData> data;
-    jobThreadQueueVector.push_back(data);
-
-    std::cout << "thread : " << " started" << std::endl;
-  }
+  // probaly gonna remove this
 }
 
 void waitAllJobs() {
@@ -262,10 +242,11 @@ void shutdownJobsSystem() {
 
   shouldShutDown = true;
 
-  for (int y = 0; y < usableThreads; y++) {
+  /*for (int y = 0; y < usableThreads; y++) {
 
-    sem.release();
-  }
+    //sem.release();
+  }*/
+  syscall(SYS_futex, &futexVal, FUTEX_WAKE, INT_MAX);
   // std::cout << "Shuting down" << std::endl;
 
   for (int i = 0; i < threads.size(); i++) {
@@ -273,11 +254,4 @@ void shutdownJobsSystem() {
       threads[i].join();
     }
   }
-  /*for (auto &thread : threads) {
-    std::cout << "doing stuff" << std::endl;
-    if (thread.joinable()) {
-      thread.join();
-      std::cout << "thread joined" << std::endl;
-    }
-  }*/
 }
